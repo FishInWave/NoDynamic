@@ -1,0 +1,9 @@
+#忽略build
+build/
+*.pcd
+*.json
+*.yaml
+*.pgm
+*.vscode
+.history/
+!*.yaml
