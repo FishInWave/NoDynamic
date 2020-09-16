@@ -1,9 +1,8 @@
 #忽略build
-!*.yaml
-build/
+!config.yaml
+build/*
 *.pcd
 *.json
-*.yaml
 *.pgm
 *.vscode
 .history/

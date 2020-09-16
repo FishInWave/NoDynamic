@@ -1,0 +1,27 @@
+voxel:
+  #室外体素滤波使用0.1
+  leafsize: 0.1
+#高程滤波，事先滤除天花板和地面点云，用于NDT匹配。
+passthrough:
+  ceiling_height: 2.0
+  floor_height: 0.1
+#可选NDT,00NDT_OMP,GICP_OMP
+registration_method: GICP_OMP
+
+NDT_OMP:
+  resolution: 1.0
+  epsilon: 0.01
+  maximum_iterations: 64
+  # 可以选KDTREE，DIRECT1，DIRECT7，7最好。
+  search_method: DIRECT7
+GICP_OMP:
+  resolution: 0.1
+  epsilon: 0.01
+  maximum_iterations: 64
+  use_reciprocal_correspondences: false
+  correspondence_randomness: 20
+  max_optimizer_iterations: 20
+cluster:
+  cluster_tolerance: 0.1
+  min_cluster_size: 20
+  max_cluster_size: 100

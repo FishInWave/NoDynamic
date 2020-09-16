@@ -9,7 +9,6 @@
  * 
  */
 //pcl
-#include <pcl/visualization/cloud_viewer.h>
 #include <pcl/io/io.h>
 #include <pcl/io/pcd_io.h>
 #include <pcl/filters/passthrough.h>
@@ -23,6 +22,7 @@
 #include <pcl/registration/ndt.h>
 #include <pcl/registration/icp.h>
 #include <pcl/registration/gicp.h>
+#include <pcl/common/centroid.h>
 //std
 #include <cstdio>
 #include <fstream>
@@ -30,6 +30,7 @@
 #include <dirent.h>
 #include <sys/types.h>
 #include <algorithm>
+#include <utility>
 //third party
 #include "yaml-cpp/yaml.h"
 #include <pclomp/ndt_omp.h>
@@ -246,15 +247,16 @@ Eigen::Matrix4f matching(pcl::Registration<PointT, PointT>::Ptr registration, co
 }
 
 /**
- * @brief 从输入点云中，提取聚类的索引
+ * @brief 对输入点云进行聚类，提取聚类点云另外保存，并计算聚类质心坐标。
  * 
  * @param cloud 
- * @param cluster_indices 
- * @return int 
+ * @param cluster_pairs 聚类点云和质心坐标的pair集合
+ * @return int 点云中的聚类个数
  */
-int cluster(PointCloud::Ptr &cloud, vector<pcl::PointIndices> cluster_indices)
+int cluster(PointCloud::Ptr &cloud, vector<pair<PointCloud::Ptr, Eigen::Vector4f>> &cluster_pairs)
 {
     pcl::search::KdTree<PointT>::Ptr tree(new pcl::search::KdTree<PointT>);
+    vector<pcl::PointIndices> cluster_indices;
     tree->setInputCloud(cloud);
     pcl::EuclideanClusterExtraction<PointT> ec;
     ec.setClusterTolerance(cluster_tolerance);
@@ -263,6 +265,22 @@ int cluster(PointCloud::Ptr &cloud, vector<pcl::PointIndices> cluster_indices)
     ec.setSearchMethod(tree);
     ec.setInputCloud(cloud);
     ec.extract(cluster_indices);
+    for (auto it = cluster_indices.begin(); it != cluster_indices.end(); it++)
+    {
+        PointCloud::Ptr cloud_cluster(new PointCloud);
+        for (auto pit = it->indices.begin(); pit != it->indices.end(); ++pit)
+            cloud_cluster->push_back((*cloud)[*pit]);
+        cloud_cluster->width = cloud_cluster->size();
+        cloud_cluster->height = 1;
+        cloud_cluster->is_dense = true;
+        Eigen::Vector4f centroid;
+        unsigned int p_num = pcl::compute3DCentroid(*cloud_cluster, centroid);
+        pair<PointCloud::Ptr, Eigen::Vector4f> cluster_pair = make_pair(cloud_cluster, centroid);
+        cluster_pairs.push_back(cluster_pair);
+    }
+    cout << "use indiches: " << *(cloud->begin()+cluster_indices.begin()->indices.front()) << endl;
+    cout << "use subscript: " << cloud->points.at(cluster_indices.begin()->indices.front()) << endl;
+    return cluster_indices.size();
 }
 /**
  * @brief 向一个文件流写入odom
@@ -316,6 +334,10 @@ bool createFile(std::ofstream &ofs, std::string file_path)
     return true;
 }
 
+int getClusterCentroid(vector<pcl::PointIndices> &cluster_indices, vector<pair<pcl::PointIndices, Eigen::Vector3f>> &cluster_pair)
+{
+}
+
 int main(int argc, char **argv)
 {
     std::string file_path;
@@ -338,11 +360,11 @@ int main(int argc, char **argv)
     pcl::Registration<PointT, PointT>::Ptr registration = initRegistration();
 
     PointCloud::Ptr cloud20(new PointCloud);
-        PointCloud::Ptr cloud21(new PointCloud);
+    PointCloud::Ptr cloud21(new PointCloud);
     pcl::io::loadPCDFile(filenames.at(20), *cloud20);
-    pcl::io::loadPCDFile(filenames.at(21),*cloud21);
+    pcl::io::loadPCDFile(filenames.at(21), *cloud21);
     matching(registration, cloud20, cloud21);
-    cout << "20: " << registration->getFinalTransformation() <<endl;
+    cout << "20: " << registration->getFinalTransformation() << endl;
     for (auto file : filenames)
     {
 
@@ -362,9 +384,9 @@ int main(int argc, char **argv)
             odom1 = matching(registration, prev_cloud, cloud);
         }
         prev_cloud = cloud;
-        vector<pcl::PointIndices> cluster_indices;
-        cluster(cloud_filtered, cluster_indices);
-        KeyFrame keyframe(odom1, odom2, cloud, cloud_filtered, cluster_indices);
+        vector<pair<PointCloud::Ptr, Eigen::Vector4f>> cluster_pairs;
+        cluster(cloud_filtered, cluster_pairs);
+        KeyFrame keyframe(odom1, odom2, cloud, cloud_filtered, cluster_pairs);
         keyframes.push_back(keyframe);
     }
     std::ofstream ofs;
@@ -375,6 +397,7 @@ int main(int argc, char **argv)
     }
     ofs.close();
     cout << "have already finished" << endl;
+    //TODO:动态物体检测算法
 
     return 0;
 }
