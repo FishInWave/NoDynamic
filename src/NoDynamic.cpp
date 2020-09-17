@@ -151,7 +151,7 @@ void getFileNames(std::string &path, std::vector<std::string> &filenames)
     filenames.clear();
     for (int i = 0; i < num; i++)
     {
-        string temp = path + "/key_frame_" + to_string(i) + ".pcd";
+        string temp = path + "key_frame_" + to_string(i) + ".pcd";
         filenames.push_back(temp);
     }
 }
@@ -200,12 +200,10 @@ pcl::Registration<PointT, PointT>::Ptr initRegistration()
     }
     else if (registration_method == "NDT")
     {
-        cout << "NDT" << endl;
         boost::shared_ptr<pcl::NormalDistributionsTransform<PointT, PointT>> ndt(new pcl::NormalDistributionsTransform<PointT, PointT>());
         ndt->setTransformationEpsilon(ndt_epsilon);
         ndt->setMaximumIterations(ndt_maximum_iterations);
         ndt->setResolution(ndt_resolution);
-        cout << "NDT finish" << endl;
         return ndt;
     }
 }
@@ -239,7 +237,7 @@ Eigen::Matrix4f matching(pcl::Registration<PointT, PointT>::Ptr registration, co
     }
     Eigen::Matrix4f trans = registration->getFinalTransformation();
     Eigen::Matrix4f odom = keyframe_pose * trans;
-    cout << align_count << ":" << registration->getFitnessScore() << endl;
+    // cout << align_count << ":" << registration->getFitnessScore() << endl;
     prev_trans = trans;
     keyframe_pose = odom;
     align_count++;
@@ -278,8 +276,6 @@ int cluster(PointCloud::Ptr &cloud, vector<pair<PointCloud::Ptr, Eigen::Vector4f
         pair<PointCloud::Ptr, Eigen::Vector4f> cluster_pair = make_pair(cloud_cluster, centroid);
         cluster_pairs.push_back(cluster_pair);
     }
-    cout << "use indiches: " << *(cloud->begin()+cluster_indices.begin()->indices.front()) << endl;
-    cout << "use subscript: " << cloud->points.at(cluster_indices.begin()->indices.front()) << endl;
     return cluster_indices.size();
 }
 /**
@@ -333,9 +329,22 @@ bool createFile(std::ofstream &ofs, std::string file_path)
 
     return true;
 }
-
-int getClusterCentroid(vector<pcl::PointIndices> &cluster_indices, vector<pair<pcl::PointIndices, Eigen::Vector3f>> &cluster_pair)
+/**
+ * @brief 通过质心位置判断是否静止
+ * 
+ * @param pair_list 
+ * @param candidate 
+ * @param dx_list 
+ * @return true 
+ * @return false 
+ */
+bool isContained(vector<pair<PointCloud::Ptr, Eigen::Vector4f>> &pair_list, pair<PointCloud::Ptr, Eigen::Vector4f> &candidate, vector<float> &dx_list)
 {
+    for (auto pair : pair_list)
+    {
+        auto dx = (candidate.second - pair.second).norm();
+        dx_list.push_back(dx);
+    }
 }
 
 int main(int argc, char **argv)
@@ -358,13 +367,6 @@ int main(int argc, char **argv)
     vector<string> filenames;
     getFileNames(file_path, filenames);
     pcl::Registration<PointT, PointT>::Ptr registration = initRegistration();
-
-    PointCloud::Ptr cloud20(new PointCloud);
-    PointCloud::Ptr cloud21(new PointCloud);
-    pcl::io::loadPCDFile(filenames.at(20), *cloud20);
-    pcl::io::loadPCDFile(filenames.at(21), *cloud21);
-    matching(registration, cloud20, cloud21);
-    cout << "20: " << registration->getFinalTransformation() << endl;
     for (auto file : filenames)
     {
 
@@ -377,7 +379,6 @@ int main(int argc, char **argv)
         if (file == filenames.front())
         {
             odom1.setIdentity();
-            cout << odom1 << endl;
         }
         else
         {
@@ -390,12 +391,36 @@ int main(int argc, char **argv)
         keyframes.push_back(keyframe);
     }
     std::ofstream ofs;
+    //计算dx
+    string dx_path = "/home/xyw/dx/";
+    for (auto it = keyframes.begin(); it != keyframes.end(); ++it)
+    {
+
+        if (it == keyframes.begin())
+            continue;
+
+        static int count = 1;
+        createFile(ofs, dx_path + "dx_" + to_string(count++) + ".txt");
+        for (auto pair : it->cluster_pairs)
+        {
+            vector<float> dx;
+            isContained((it - 1)->cluster_pairs, pair, dx);
+            for(auto dx_i : dx)
+            {
+                 ofs << dx_i << endl;
+            }
+            ofs << endl;
+        }
+        ofs.close();
+    }
+
     createFile(ofs, file_path + "origin_odom.txt");
     for (auto keyframe : keyframes)
     {
         saveOdom(ofs, keyframe.odom1);
     }
     ofs.close();
+
     cout << "have already finished" << endl;
     //TODO:动态物体检测算法
 
